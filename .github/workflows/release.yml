@@ -1,0 +1,23 @@
+name: Publish to PyPI
+
+# Requires a PYPI_API_TOKEN secret (pypi.org -> account settings -> API tokens),
+# or configure trusted publishing for this project on PyPI and remove the
+# `with: password:` block below.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
