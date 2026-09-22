@@ -1,186 +1,112 @@
-[English](README.md) | [简体中文](README.zh-CN.md)
-
 # jev-mcp-server
 
-[![CI](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/jev-mcp-server)](https://pypi.org/project/jev-mcp-server/)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/jev-mcp-server/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[English](README.md)
 
-**[Jev](https://typesafe.ai)（TypeSafe System One）的 MCP server——与官方三种问题类型一一对应的忠实实现，外加批量分类。**
+![CI](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml/badge.svg)
+![PyPI](https://img.shields.io/pypi/v/jev-mcp-server.svg)
+![Python](https://img.shields.io/pypi/pyversions/jev-mcp-server.svg)
+![License](https://img.shields.io/pypi/l/jev-mcp-server.svg)
+![Downloads](https://img.shields.io/pypi/dm/jev-mcp-server.svg)
 
-当你的编码 agent 需要一个判断——哪条日志是根因、这个 diff 风险多高、这个改动是否 breaking——通常会烧掉一次前沿 LLM 调用还只换来一段散文。Jev 用**类型化决策 + 校准概率**作答，零点几秒、不到一厘钱：
+**Jev（TypeSafe System One 模型）的 MCP 服务器**：官方三种问题类型（**choice / score / noul**）忠实实现，外加 **compare**、**verify**、批量 **classify** 和一键客户端安装。
 
-| 问题类型 | 用途 | 返回 | 实测* |
-|---|---|---|---|
-| `choice` | 从 2-100 个选项中选 1 | 胜者 + 全部选项的概率分布 + 置信度 | ~0.6 s，约 $0.00002 |
-| `score` | 按 2-8 级 rubric 打分 | 小数索引 + 各等级概率 | ~0.5 s，约 $0.00002 |
-| `noul` | 是 / 否 | 0-1 程度值 | ~0.4 s，约 $0.00001 |
-| `classify` | 给最多 100 条内容打标签 | 每条的选择结果 + 汇总统计 | ~0.5 s × 条数 |
-
-\* 基于 `jev-1.13.0`，2026-09 真实会话实测（见[基准数据](#基准数据)）。
-
-## 为什么选这个
-
-- **与官方 API 一一对应。** 工具名就是 System One 的问题类型（`choice` / `score` / `noul`），[TypeSafe 文档](https://typesafe.ai)里学到的任何东西直接迁移，没有发明新抽象。
-- **决策，不是解释。** Jev 从不返回理由——assistant 写的任何"为什么"都是它对概率分布的自行解读。本 README 和工具文档都明确说了这一点，让你构建的报告保持诚实。
-- **批量 `classify`**：路由/打标工作流，逐条自动缓存。
-- **一次性 `setup` 工具**：在聊天里贴一次 key，真调 API 验证后以 `0600` 权限落盘，永不回显。
-- **中英双语文档**，提供 Claude Code、Codex、OpenCode、pi 及任意 stdio MCP 客户端的配置。
-- 离线测试（CI 不联网）、429/503/529 自动重试、响应校验（概率和为 1、胜者即最大值）、可选响应缓存。
+Jev 以不足一秒的延迟、不到一厘钱的成本返回"类型化决策 + 校准概率"——那些前沿大模型跑起来太慢太贵的机械判断（分流、路由、打分、卡点）。
 
 ## 快速开始
 
-1. 在 [console.typesafe.ai/settings/keys](https://console.typesafe.ai/settings/keys) 申请 TypeSafe API key。
-2. 按下面的片段把 server 注册进你的客户端。
-3. 要么导出 `TYPESAFE_API_KEY`，要么直接对 agent 说："用 jev 的 setup 工具配置 key `tsk_...`"。
-
-### Claude Code
-
 ```bash
-claude mcp add jev --env TYPESAFE_API_KEY=YOUR_KEY -- uvx jev-mcp-server
+# 1. 获取 key：https://console.typesafe.ai/settings/keys
+
+# 2. 一行命令装进你的客户端（配置自动写入）：
+uvx jev-mcp-server install claude-code    # 也可：pi | cursor | opencode | codex
+
+# 3. 客户端在运行中的话重启一下，然后问：
+#    "这三个发版方案哪个风险最低？给我概率分布。"
 ```
 
-### Codex（`~/.codex/config.toml`）
+没有 `uv`？`curl -LsSf https://astral.sh/uv/install.sh | sh`（或 `brew install uv` / `pip install uv`）。
+
+<details>
+<summary><b>手动配置</b>（没有安装器条目的客户端）</summary>
+
+大多数 stdio MCP 客户端通用形状：
+
+```json
+{
+  "mcpServers": {
+    "jev": {
+      "command": "uvx",
+      "args": ["jev-mcp-server"],
+      "env": { "TYPESAFE_API_KEY": "apikey_xxx" }
+    }
+  }
+}
+```
+
+Codex（`~/.codex/config.toml`）：
 
 ```toml
 [mcp_servers.jev]
 command = "uvx"
 args = ["jev-mcp-server"]
-env = { TYPESAFE_API_KEY = "YOUR_KEY" }
+
+[mcp_servers.jev.env]
+TYPESAFE_API_KEY = "apikey_xxx"
 ```
 
-### OpenCode（`~/.config/opencode/opencode.json`）
+OpenCode（`opencode.json` 的 `"mcp"` 段）：`{"jev": {"type": "local", "command": ["uvx", "jev-mcp-server"], "env": {"TYPESAFE_API_KEY": "apikey_xxx"}}}`
 
-```json
-{
-  "mcp": {
-    "jev": { "type": "local", "command": ["uvx", "jev-mcp-server"], "enabled": true }
-  }
-}
-```
+不想把 key 写进配置？去掉 env 块，在 agent 里调一次 `setup` 工具——它会真调 API 验证后以 0600 权限落盘。
+</details>
 
-### pi（`~/.pi/agent/mcp.json`）
+## 工具一览
 
-```json
-{
-  "mcpServers": {
-    "jev": { "command": "uvx", "args": ["jev-mcp-server"], "lifecycle": "lazy" }
-  }
-}
-```
-
-### 任意 stdio MCP 客户端
-
-```json
-{ "command": "uvx", "args": ["jev-mcp-server"] }
-```
-
-### 从源码运行（本仓库）
-
-```json
-{ "command": "uv", "args": ["run", "--directory", "/path/to/jev-mcp-server", "jev-mcp-server"] }
-```
-
-## 工具说明
-
-### `choice(question, options, context="")`
-
-从 2-100 个互斥选项中选一个。返回全部选项的概率分布（险胜看得见）、置信度和第二名。
-
-```json
-{"choice": "E1", "confidence": 0.67,
- "probabilities": {"E1": 0.72, "E6": 0.2, "E5": 0.05, "E2": 0.01, "E3": 0.01, "E4": 0.01},
- "runner_up": "E6", "model": "jev-1.13.0", "latency_ms": 678,
- "usage": {"input_tokens": 1677, "output_tokens": 66}}
-```
-
-### `score(question, levels, context="")`
-
-按 2-8 级有序 rubric 打分。`score` 是 0 起始的小数索引：等级为 `["minor","moderate","severe","critical"]` 时 `2.22` 表示 *severe 偏 critical*。
-
-```json
-{"score": 2.22, "nearest_level": "severe", "confidence": 0.59,
- "probabilities": {"severe": 0.6, "critical": 0.2, "moderate": 0.2}, "...": "..."}
-```
-
-### `noul(question, context="")`
-
-带 0-1 程度值的判断题（`>= 0.5` 偏"是"）。没有概率列表——程度值就是答案。
-
-```json
-{"noul": 0.76, "verdict": "yes", "model": "jev-1.13.0", "latency_ms": 402, "usage": {"...": "..."}}
-```
-
-### `classify(items, options, question=..., context="")`
-
-对最多 100 条内容按同一套类目批量打标。每条一次 `choice` 调用，自动汇总：
-
-```json
-{"results": [{"item": "工单 #1", "choice": "billing", "confidence": 0.81, "probabilities": {"...": "..."}}],
- "summary": {"billing": 12, "bug": 7, "howto": 3},
- "usage": {"input_tokens": 8210, "output_tokens": 210, "calls": 22, "cached_calls": 0}}
-```
-
-### `setup(api_key)`
-
-一次性配置：真调 API 验证 key，存到 `~/.config/jev-mcp/key`（0600 权限），永不回显。环境变量 `TYPESAFE_API_KEY` 始终优先于落盘的 key。
-
-## 缓存（默认关闭）
-
-设置 `JEVMCP_CACHE=1` 开启。缓存键是问题载荷的 SHA-256，因此：
-
-- 完全相同的重复决策（重试、重跑、确定性流水线）以 ~0 ms 返回、**零 API 成本**，`usage` 会显示 `{"cached": true}`。
-- `classify` 自动受益：同一批次里的重复条目只计费一次。
-
-当决策必须保持新鲜时（如对变化数据的实时分流）请保持**关闭**。缓存文件在 `~/.cache/jev-mcp/`（可用 `JEVMCP_CACHE_DIR` 改路径），随时可删。
-
-## 配置项
-
-| 变量 | 默认值 | 用途 |
-|---|---|---|
-| `TYPESAFE_API_KEY` | — | API key（env 优先于 `setup` 落盘的文件） |
-| `JEVMCP_MODEL` | `jev-latest` | 发送给 API 的模型名 |
-| `JEVMCP_BASE_URL` | `https://api.typesafe.ai/v1/systemone` | 指向兼容网关（实验性） |
-| `JEVMCP_CACHE` | 关 | `1`/`true` 开启响应缓存 |
-| `JEVMCP_CACHE_DIR` | `~/.cache/jev-mcp` | 缓存位置 |
-| `JEVMCP_CONFIG_DIR` | `~/.config/jev-mcp` | `setup` 存 key 的目录 |
-
-> **关于 OpenRouter**：Jev 曾宣布上架 OpenRouter（`~typesafe/jev-latest`），但发布时点它**没有**出现在 OpenRouter 公开模型目录里，我们也无法验证兼容的调用格式。如果你通过网关路由 Jev，请设置 `JEVMCP_BASE_URL` 并欢迎提 issue 分享结果。
-
-## 决策，不是解释
-
-Jev 的契约是：一个决策、校准的概率，仅此而已——没有理由文本。这是它快和便宜的原因。当你的 assistant 叙述"jev 选了 E1 是因为……"时，那番解释是 assistant 对数字的**自行解读**，不是 Jev 的输出。正式报告（根因分析、评审结论）要么让 LLM 自己推理，要么用两段式——Jev 决策、LLM 解释，并明确标注解释是推断。
-
-## 基准数据
-
-2026-09 基于 `jev-1.13.0` 实测，单问题、真实会话：
-
-| 调用 | 延迟 | 输入 tokens | 输出 tokens |
+| 工具 | 官方类型 | 作用 | 典型场景 |
 |---|---|---|---|
-| `choice`，6 个选项 | 615-678 ms | 344-1677 | 31-66 |
-| `score`，3 级 | ~500 ms | ~350 | ~30 |
-| `noul` | ~400 ms | ~300 | ~25 |
+| `choice` | `choice` | 从 2–100 个互斥选项中选 1 个；返回**全部**选项的概率，平局可见 | 分流、路由、tie-break |
+| `score` | `score` | 按 2–8 级有序量表打分；小数索引（1.88 = 介于 1、2 级之间偏 2） | 风险 / 严重度 / 质量评级 |
+| `noul` | `noul` | 是非题，返回 0–1 程度值 | "这个改动 breaking 吗？" |
+| `compare` | `choice`（A/B） | 两个候选谁更好，概率分布可见 | 标题、方案、文案二选一 |
+| `verify` | `noul`（断言/证据） | 一条断言对照给定证据的支持度 | 核对报告、日志与症状匹配 |
+| `classify` | `choice`（批量） | ≤100 条条目 × 同一套类别，汇总聚合 | 打标、排序队列 |
+| `setup` | — | 验证并保存 key（0600），一次即可 | 免环境变量的引导 |
 
-按 [$42 / 10 亿输入 tokens](https://typesafe.ai) 计，一次典型调用约 $0.00002——比前沿 LLM 做同样判断低约两个数量级。
+## 为什么用 Jev、为什么用这个 server
 
-## 同类项目（有一说一）
+Jev 输出的是**决策而不是文本**：类型化答案 + 校准概率 + 置信度，从不解释。这就是一次调用只要 ~$0.00001–0.0001、~0.5–1 秒的原因——同样的判断，前沿 LLM 要数秒、贵百倍。（你的助手补充的任何"理由"都是它对数字的解读，请当作假设看待。）
 
-- [jkudish/jev-mcp](https://github.com/jkudish/jev-mcp) —— Node/npm，十个面向工作流的工具（verify、screen、rerank、gate……）。想要现成 agent 安全工作流选它。
-- [itsmostafa/typesafe-mcp](https://github.com/itsmostafa/typesafe-mcp) —— Go 二进制，单一通用 `evaluate` 工具，一条命令装好客户端。
+真实使用实测（单次调用，仅供参考）：
 
-`jev-mcp-server` 是贴近底层 API 的那个选项：三种官方问题类型、与 TypeSafe 命名完全一致，外加批量分类、双语文档和实测数据。都是 MIT，按口味选。
+| 调用 | 延迟 | 输入 tokens | 成本* |
+|---|---|---|---|
+| `choice`，6 个带上下文的选项 | ~0.6–0.7s | ~1.7k | ≈ $0.00007 |
+| `noul` / `verify`，短上下文 | ~0.4–0.6s | ~0.3–0.5k | ≈ $0.00002 |
+| `classify`，100 条 | 串行约 1 分钟 | 约为上者 ×100 | ≈ $0.007 |
 
-## 开发
+\* 按 $42 / 十亿 input tokens 计算。
 
-```bash
-uv sync
-uv run ruff check .
-uv run pytest -q
-```
+本服务器忠实映射官方 System One API（同款三种问题类型、响应校验、429/503/529 重试），增加批量、缓存和一键安装，除 `mcp` 与 `httpx` 外零依赖。
 
-测试完全离线（HTTP 层 mock，CI 不花 API 额度）。
+## 配置
+
+| 变量 | 含义 | 默认 |
+|---|---|---|
+| `TYPESAFE_API_KEY` | API key；环境变量优先于 `setup` 存的文件 | — |
+| `JEVMCP_BASE_URL` | API 端点覆盖（接中转/实验用） | `https://api.typesafe.ai/v1/systemone` |
+| `JEVMCP_MODEL` | 模型名 | `jev-latest` |
+| `JEVMCP_CACHE` | `1`/`true`/`on` 开启响应缓存 | 关 |
+| `JEVMCP_CACHE_DIR` / `JEVMCP_CONFIG_DIR` | 缓存 / key 存储位置 | `~/.cache/jev-mcp`、`~/.config/jev-mcp` |
+
+开启 `JEVMCP_CACHE=1` 后，相同问题载荷直接从磁盘命中，零成本（`usage.cached: true`）；`classify` 自动去重批内重复条目。
+
+## 常见问题
+
+**Jev 为什么从不解释选择？** 产品设计如此——"decisions, not strings"。概率分布就是全部输出；解释会花掉这个模型赖以生存的延迟和 token。
+
+**需要另外的大模型或本地装 Jev 吗？** 不需要。Jev 是云端 API，没有本地模型、没有辅助 LLM。你的 agent 主模型本来就负责决定何时调用、如何解读数字。
+
+**还有别的 Jev MCP 吗？** 有——[`jkudish/jev-mcp`](https://github.com/jkudish/jev-mcp)（Node/npm，十个工作流工具），另有 Go 实现。本服务器是 Python/uvx 这一边：官方问题类型忠实实现、一键安装、双语文档、MIT。
 
 ## 许可证
 
-[MIT](LICENSE)
+MIT

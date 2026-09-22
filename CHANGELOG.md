@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-09-23
+
+- `jev-mcp-server install <client>` — one-command client setup (pi, claude-code, cursor, opencode, codex): resolves the API key from `--key` / env / prompt, merges the `jev` entry into the client config, backs up modified files to `*.bak`, idempotent unless `--force`.
+- New tools:
+  - `compare` — A/B judgment returning the preferred side plus the visible probability split.
+  - `verify` — claim-vs-evidence support degree (0-1) for fact-checks and symptom-vs-log matching.
+- README: quickstart reduced to one install command, tools table, measured latency/cost table, FAQ.
+
 ## 0.1.0 — 2026-09-22
 
 Initial release.

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import time
 
 from mcp.server.fastmcp import FastMCP
@@ -190,6 +191,84 @@ def noul(question: str, context: str = "") -> str:
 
 
 @mcp.tool()
+def compare(question: str, a: str, b: str, context: str = "") -> str:
+    """Ask Jev (TypeSafe System One) which of two candidates — a or b — better satisfies the question.
+
+    The official `choice` type as a focused A/B judgment: "which error message is
+    clearer?", "which rollout plan fits this service better?", "title A or B?".
+    Returns the preferred side PLUS the probability split, so a 52/48 coin flip
+    is visible instead of hidden.
+
+    Args:
+        question: What to judge, phrased so one side can win, e.g. "Which error message is clearer?"
+        a: Candidate A text.
+        b: Candidate B text.
+        context: Optional background facts. Keep it short.
+
+    Returns:
+        JSON string: {preferred: "a"|"b", confidence, probabilities: {a, b},
+                      runner_up, model, latency_ms, usage}
+    """
+    a = str(a).strip()
+    b = str(b).strip()
+    if not a or not b:
+        raise ValueError("Both a and b must be non-empty strings.")
+    if a == b:
+        raise ValueError("a and b must differ, otherwise there is nothing to compare.")
+    options = {"a": a, "b": b}
+    started = time.perf_counter()
+    result, from_cache = _answer(
+        {"decision": {"type": "choice", "criteria": options, "instructions": {"question": question, "context": context}}}
+    )
+    answer = _validated_choice(result.get("answers", {}).get("decision", {}), {"a", "b"})
+    probs = dict(sorted(answer["probabilities"].items(), key=lambda kv: -kv[1]))
+    return json.dumps(
+        {
+            "preferred": answer["choice"],
+            "confidence": answer["confidence"],
+            "probabilities": probs,
+            "runner_up": min(probs, key=probs.get),
+            **_meta(result, started, from_cache),
+        },
+        ensure_ascii=False,
+    )
+
+@mcp.tool()
+def verify(claim: str, evidence: str) -> str:
+    """Check ONE claim against supplied evidence; returns a 0-1 support degree (>= 0.5 leans supported).
+
+    The official `noul` type framed as claim-vs-evidence: fact-check a report
+    line against its source, confirm a log excerpt actually shows the reported
+    symptom, validate a summary against the document it summarizes. Evidence is
+    passed as context — Jev judges only what it is given, never invents evidence.
+
+    Args:
+        claim: A single falsifiable claim, e.g. "The 404s come from edhub, not the gateway".
+        evidence: The evidence text to check the claim against (log excerpt, doc paragraph, diff).
+
+    Returns:
+        JSON string: {noul, verdict, model, latency_ms, usage}
+    """
+    claim = str(claim).strip()
+    evidence = str(evidence).strip()
+    if not claim or not evidence:
+        raise ValueError("Both claim and evidence must be non-empty strings.")
+    started = time.perf_counter()
+    result, from_cache = _answer(
+        {
+            "noul": {
+                "type": "noul",
+                "instructions": {"question": f"Is this claim supported by the evidence?\nClaim: {claim}", "context": evidence},
+            }
+        }
+    )
+    answer = result.get("answers", {}).get("noul", {})
+    value = answer.get("noul")
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError("Invalid TypeSafe response; no verdict returned.")
+    return json.dumps({"noul": value, "verdict": "supported" if value >= 0.5 else "not supported", **_meta(result, started, from_cache)}, ensure_ascii=False)
+
+@mcp.tool()
 def classify(
     items: list[str],
     options: dict[str, str],
@@ -290,6 +369,10 @@ def setup(api_key: str) -> str:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "install":
+        from . import installer
+
+        sys.exit(installer.cli(sys.argv[2:]))
     mcp.run(transport="stdio")
 
 

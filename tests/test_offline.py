@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 
 import pytest
 
-from jev_mcp_server import client, config, server
+from jev_mcp_server import client, config, installer, server
 
 
 def choice_payload(choice="a", probs=None, confidence=0.8):
@@ -157,3 +158,111 @@ def test_missing_key_message(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="setup"):
         client.ask({"x": {"type": "noul", "instructions": {"question": "q"}}})
+
+# --- compare ---
+
+def test_compare_happy(monkeypatch):
+    monkeypatch.setattr(
+        client, "ask", lambda q: choice_payload(choice="b", probs={"a": 0.45, "b": 0.55}, confidence=0.55)
+    )
+    data = json.loads(server.compare("which title is clearer?", "old title", "new title"))
+    assert data["preferred"] == "b"
+    assert data["runner_up"] == "a"
+    assert data["probabilities"] == {"b": 0.55, "a": 0.45}
+
+def test_compare_validation():
+    with pytest.raises(ValueError):
+        server.compare("q", "same text", "same text")
+    with pytest.raises(ValueError):
+        server.compare("q", "", "b")
+
+# --- verify ---
+
+def test_verify_happy(monkeypatch):
+    captured = {}
+    payload = {
+        "model": "jev-test",
+        "answers": {"noul": {"type": "noul", "noul": 0.82}},
+        "usage": {"input_tokens": 5, "output_tokens": 1},
+    }
+
+    def fake_ask(questions):
+        captured.update(questions)
+        return payload
+
+    monkeypatch.setattr(client, "ask", fake_ask)
+    data = json.loads(server.verify("the sky is blue", "photo shows a blue sky"))
+    assert data["noul"] == 0.82 and data["verdict"] == "supported"
+    assert "the sky is blue" in captured["noul"]["instructions"]["question"]
+    assert captured["noul"]["instructions"]["context"] == "photo shows a blue sky"
+
+def test_verify_validation():
+    with pytest.raises(ValueError):
+        server.verify("claim", "")
+
+# --- installer ---
+
+@pytest.fixture
+def fake_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    return tmp_path
+
+def test_install_pi_writes_config(fake_home):
+    status = installer.install_pi("apikey_test1234", force=False)
+    assert "written" in status
+    data = json.loads((fake_home / ".pi" / "agent" / "mcp.json").read_text())
+    entry = data["mcpServers"]["jev"]
+    assert entry["command"] == "uvx"
+    assert entry["args"] == ["jev-mcp-server"]
+    assert entry["env"]["TYPESAFE_API_KEY"] == "apikey_test1234"
+    assert entry["lifecycle"] == "lazy"
+
+def test_install_preserves_existing_servers(fake_home):
+    path = fake_home / ".cursor" / "mcp.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}))
+    installer.install_cursor("apikey_test1234", force=False)
+    data = json.loads(path.read_text())
+    assert data["mcpServers"]["other"] == {"command": "x"}
+    assert data["mcpServers"]["jev"]["command"] == "uvx"
+
+def test_install_skips_existing_without_force(fake_home):
+    installer.install_pi("apikey_first", force=False)
+    status = installer.install_pi("apikey_second", force=False)
+    assert "already configured" in status
+    data = json.loads((fake_home / ".pi" / "agent" / "mcp.json").read_text())
+    assert data["mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"] == "apikey_first"
+
+def test_install_force_overwrites_with_backup(fake_home):
+    installer.install_pi("apikey_first", force=False)
+    installer.install_pi("apikey_second", force=True)
+    data = json.loads((fake_home / ".pi" / "agent" / "mcp.json").read_text())
+    assert data["mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"] == "apikey_second"
+    backup = json.loads((fake_home / ".pi" / "agent" / "mcp.json.bak").read_text())
+    assert backup["mcpServers"]["jev"]["env"]["TYPESAFE_API_KEY"] == "apikey_first"
+
+def test_install_claude_fallback_writes_json(fake_home):
+    status = installer.install_claude_code("apikey_test1234", force=False)
+    assert "written" in status
+    data = json.loads((fake_home / ".claude.json").read_text())
+    assert data["mcpServers"]["jev"]["args"] == ["jev-mcp-server"]
+
+def test_install_opencode_shape(fake_home):
+    installer.install_opencode("apikey_test1234", force=False)
+    data = json.loads((fake_home / ".config" / "opencode" / "opencode.json").read_text())
+    assert data["mcp"]["jev"]["type"] == "local"
+    assert data["mcp"]["jev"]["command"] == ["uvx", "jev-mcp-server"]
+    assert data["mcp"]["jev"]["env"]["TYPESAFE_API_KEY"] == "apikey_test1234"
+
+def test_install_codex_appends_and_skips(fake_home):
+    installer.install_codex("apikey_test1234", force=False)
+    text = (fake_home / ".codex" / "config.toml").read_text()
+    assert "[mcp_servers.jev]" in text
+    assert 'TYPESAFE_API_KEY = "apikey_test1234"' in text
+    status = installer.install_codex("apikey_other", force=False)
+    assert "already configured" in status
+
+def test_cli_bad_client_exits(fake_home):
+    with pytest.raises(SystemExit):
+        installer.cli(["not-a-client", "--key", "k"])
