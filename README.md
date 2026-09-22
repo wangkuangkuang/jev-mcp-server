@@ -1,30 +1,34 @@
 # jev-mcp-server
 
-[中文文档](README.zh-CN.md) | [CI](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/jev-mcp-server.svg)](https://pypi.org/project/jev-mcp-server/)
+[![Python](https://img.shields.io/pypi/pyversions/jev-mcp-server.svg)](https://pypi.org/project/jev-mcp-server/)
+[![License: MIT](https://img.shields.io/pypi/l/jev-mcp-server.svg)](https://github.com/wangkuangkuang/jev-mcp-server/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/pypi/dm/jev-mcp-server.svg)](https://pypi.org/project/jev-mcp-server/)
 
-![CI](https://github.com/wangkuangkuang/jev-mcp-server/actions/workflows/ci.yml/badge.svg)
-![PyPI](https://img.shields.io/pypi/v/jev-mcp-server.svg)
-![Python](https://img.shields.io/pypi/pyversions/jev-mcp-server.svg)
-![License](https://img.shields.io/pypi/l/jev-mcp-server.svg)
-![Downloads](https://img.shields.io/pypi/dm/jev-mcp-server.svg)
+[简体中文](https://github.com/wangkuangkuang/jev-mcp-server/blob/main/README.zh-CN.md)
 
-MCP server for **Jev — TypeSafe's System One model**: the three official question types (**choice / score / noul**), plus **compare**, **verify**, batch **classify**, and a one-command client installer.
+MCP server for Jev, TypeSafe's System One model. It exposes the three official question types (choice, score, noul) plus compare, verify, batch classify, and a one-command installer that writes your client config for you.
 
-Jev returns typed decisions with calibrated probabilities in well under a second for a fraction of a cent — the cheap mechanical judgments (triage, routing, scoring, gating) that a frontier model is too slow and too expensive to run on every candidate, claim, or list.
+## What is Jev
+
+Jev is a hosted decision model from [TypeSafe](https://typesafe.ai). You send a structured question with enumerated options; it returns a typed answer with calibrated probabilities and a confidence value. It does not write prose and it does not explain itself. A single call costs roughly $0.00002 to $0.0001 and returns in about half a second, which is what makes it practical for the small, repeated judgments (triage, routing, grading, gating) that a frontier model is too slow and too expensive to run on every item.
+
+You need a [TypeSafe API key](https://console.typesafe.ai/settings/keys). There is no local model, no second LLM, and nothing else to install.
 
 ## Quickstart
 
 ```bash
 # 1. Get a key: https://console.typesafe.ai/settings/keys
 
-# 2. Install into your client — one command, config written for you:
+# 2. Install into your client (config is written for you):
 uvx jev-mcp-server install claude-code    # or: pi | cursor | opencode | codex
 
-# 3. Restart the client if running, then ask:
-#    "Which of these rollout plans is safest? Give me the probability split."
+# 3. Restart the client if it is running, then ask:
+#    "Which of these rollout plans is safest? Show me the probability split."
 ```
 
-No `uv` yet? `curl -LsSf https://astral.sh/uv/install.sh | sh` (or `brew install uv` / `pip install uv`).
+No `uv` yet? `curl -LsSf https://astral.sh/uv/install.sh | sh`, or `brew install uv`, or `pip install uv`. A plain `pip install jev-mcp-server` works too; the installer subcommand is the same either way.
 
 <details>
 <summary><b>Manual config</b> (clients without an installer entry)</summary>
@@ -56,42 +60,73 @@ TYPESAFE_API_KEY = "apikey_xxx"
 
 OpenCode (`opencode.json`, `"mcp"` section): `{"jev": {"type": "local", "command": ["uvx", "jev-mcp-server"], "env": {"TYPESAFE_API_KEY": "apikey_xxx"}}}`
 
-Prefer not to put the key in config at all? Skip the env block and call the `setup` tool once from your agent — it verifies the key live and stores it with 0600 permissions.
+Prefer not to put the key in config at all? Skip the env block and call the `setup` tool once from your agent. It verifies the key live and stores it with 0600 permissions.
 </details>
 
 ## Tools
 
 | Tool | Official type | What it does | Typical use |
 |---|---|---|---|
-| `choice` | `choice` | Pick 1 of 2–100 options; probabilities over **all** options, so near-ties are visible | Triage, routing, tie-breaking |
-| `score` | `score` | Grade on an ordered 2–8 level rubric; fractional index (1.88 = between levels 1 and 2) | Risk / severity / quality grading |
-| `noul` | `noul` | Yes/no question with a 0–1 degree | "Is this change breaking?" |
+| `choice` | `choice` | Pick 1 of 2-100 options; probabilities over **all** options, so near-ties are visible | Triage, routing, tie-breaking |
+| `score` | `score` | Grade on an ordered 2-8 level rubric; fractional index (1.88 = between levels 1 and 2, leaning to 2) | Risk / severity / quality grading |
+| `noul` | `noul` | Yes/no question with a 0-1 degree | "Is this change breaking?" |
 | `compare` | `choice` (A/B) | Which of two candidates wins, with the visible probability split | Titles, plans, messages |
 | `verify` | `noul` (claim/evidence) | Support degree of ONE claim against evidence you supply | Fact-check lines, log-vs-symptom |
 | `classify` | `choice` (batch) | Up to 100 items against one shared category set, aggregated | Labeling queues, sorting inboxes |
-| `setup` | — | Verify a key once, store it locally (0600) | Onboarding without env config |
+| `setup` | (none) | Verify a key once, store it locally (0600) | Onboarding without env config |
 
-## Why Jev, why this server
+## Examples
 
-Jev outputs **decisions, not strings**: a typed answer plus calibrated probabilities and a confidence value — never an explanation. That is why a call costs ~$0.00001–0.0001 and lands in ~0.5–1s, where a frontier LLM takes seconds and costs 100×+ for the same judgment. (Any "reason" your assistant adds is its own interpretation of the numbers — treat it as a hypothesis.)
+Real calls; responses quoted as returned (only `usage` and `model` trimmed).
 
-Measured on real usage (single calls, indicative only):
+**choice**: which change is most likely a breaking change for API consumers? Options: rename an existing config key, add an optional response field, change the log format.
 
-| Call | Latency | Input tokens | Cost* |
+```json
+{"choice": "rename_config_key", "confidence": 1.0,
+ "probabilities": {"rename_config_key": 1.0, "add_optional_field": 0.0, "change_log_format": 0.0}}
+```
+
+**score**: regression risk of rewriting an auth middleware in place, no tests written yet, on a minor/moderate/severe rubric:
+
+```json
+{"score": 1.98, "nearest_level": "severe", "confidence": 0.96}
+```
+
+**verify**: claim "all tests in the latest CI run passed", evidence "the CI log shows 3 failed tests out of 250":
+
+```json
+{"noul": 0.01, "verdict": "not supported"}
+```
+
+## When to use it
+
+Good fit:
+
+- Enumerated options: triage, routing, tie-breaks, A/B calls
+- Rubric grading: risk, severity, review triage
+- Binary checks at volume: breaking-change gates, claim-vs-evidence checks
+- Batch labeling: 100 items against one label set for about $0.007
+
+Poor fit:
+
+- Open-ended reasoning or long-context analysis
+- Anything that needs an explanation attached. Jev returns numbers; any "reason" your assistant adds is its own reading of those numbers, not output from the model
+
+## Cost and latency (measured)
+
+Single calls, indicative only; cost at $42 per 1B input tokens.
+
+| Call | Latency | Input tokens | Cost |
 |---|---|---|---|
-| `choice`, 6 rich options + context | ~0.6–0.7s | ~1.7k | ≈ $0.00007 |
-| `noul` / `verify`, short context | ~0.4–0.6s | ~0.3–0.5k | ≈ $0.00002 |
-| `classify`, 100 items | ~1 min sequential | ~100× above | ≈ $0.007 |
-
-\* at $42 / 1B input tokens.
-
-This server maps the official System One API faithfully (same three question types, validated responses, retry on 429/503/529), adds batching, caching, and the installer, and stays a single small Python package with zero dependencies beyond `mcp` and `httpx`.
+| `choice`, 6 rich options + context | ~0.6-0.7s | ~1.7k | ≈ $0.00007 |
+| `noul` / `verify`, short context | ~0.4-0.6s | ~0.3-0.5k | ≈ $0.00002 |
+| `classify`, 100 items | ~1 min sequential | ~100× a single call | ≈ $0.007 |
 
 ## Configuration
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `TYPESAFE_API_KEY` | API key; env var beats the file stored by `setup` | — |
+| `TYPESAFE_API_KEY` | API key; env var beats the file stored by `setup` | required |
 | `JEVMCP_BASE_URL` | API endpoint override (experiment with relays) | `https://api.typesafe.ai/v1/systemone` |
 | `JEVMCP_MODEL` | Model name | `jev-latest` |
 | `JEVMCP_CACHE` | `1`/`true`/`on` enables the response cache | off |
@@ -101,12 +136,14 @@ With `JEVMCP_CACHE=1`, identical question payloads are answered from disk at zer
 
 ## FAQ
 
-**Why does Jev never explain its choice?** By design — "decisions, not strings" is the product. The probability distribution is the output; explanations cost the latency and tokens this model exists to avoid.
+**Why does Jev never explain its choice?** By design; "decisions, not strings" is the product. The probability distribution is the output. Explanations would cost the latency and tokens this model exists to avoid.
 
-**Do I need another LLM or local Jev install?** No. Jev is a cloud API — no local model, no helper LLM. Your agent's main model already handles when to call these tools and how to read the numbers.
+**Do I need another LLM or a local Jev install?** No. Jev is a cloud API; there is no local model and no helper LLM. Your agent's main model decides when to call these tools and reads the numbers.
 
-**Is there another Jev MCP?** Yes — [`jkudish/jev-mcp`](https://github.com/jkudish/jev-mcp) (Node/npm) offers ten workflow-shaped tools; a Go server also exists. This one is the Python/uvx side: faithful official question types, one-command install, bilingual docs, MIT.
+**Why not just ask my main LLM?** You can, and for one-off questions you probably should. The difference shows up in loops: an LLM's stated confidence is not calibrated, a call costs 100× more, and it takes seconds instead of milliseconds. Per item across a batch, that gap compounds.
+
+**Is there another Jev MCP?** Yes. [`jkudish/jev-mcp`](https://github.com/jkudish/jev-mcp) (Node/npm) offers ten workflow-shaped tools, and a Go server exists. This one is the Python/uvx side: faithful official question types, one-command install, bilingual docs, MIT.
 
 ## License
 
-MIT
+[MIT](https://github.com/wangkuangkuang/jev-mcp-server/blob/main/LICENSE)

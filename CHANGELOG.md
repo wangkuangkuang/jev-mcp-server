@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-09-23
+
+- README: badges now link to their target pages instead of the badge images; cross-language doc links use absolute URLs so they resolve on PyPI as well as GitHub; added a pip install path, real-call examples, a when-to-use section, and a new FAQ entry; copy pass over both languages to remove AI-writing patterns.
+
 ## 0.2.0 — 2026-09-23
 
 - `jev-mcp-server install <client>` — one-command client setup (pi, claude-code, cursor, opencode, codex): resolves the API key from `--key` / env / prompt, merges the `jev` entry into the client config, backs up modified files to `*.bak`, idempotent unless `--force`.
