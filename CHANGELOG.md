@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — 2026-09-23
+
+- Added MCP Registry ownership marker to the README (`mcp-name`); no functional changes.
+
 ## 0.2.1 — 2026-09-23
 
 - README: badges now link to their target pages instead of the badge images; cross-language doc links use absolute URLs so they resolve on PyPI as well as GitHub; added a pip install path, real-call examples, a when-to-use section, and a new FAQ entry; copy pass over both languages to remove AI-writing patterns.

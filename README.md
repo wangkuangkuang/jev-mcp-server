@@ -8,6 +8,8 @@
 
 [简体中文](https://github.com/wangkuangkuang/jev-mcp-server/blob/main/README.zh-CN.md)
 
+<!-- mcp-name: io.github.wangkuangkuang/jev-mcp-server -->
+
 MCP server for Jev, TypeSafe's System One model. It exposes the three official question types (choice, score, noul) plus compare, verify, batch classify, and a one-command installer that writes your client config for you.
 
 ## What is Jev
