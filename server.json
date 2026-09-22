@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.wangkuangkuang/jev-mcp-server",
+  "title": "Jev MCP Server",
+  "description": "MCP server for Jev (TypeSafe System One): choice, score, noul, compare, verify, and batch classify. Typed decisions with calibrated probabilities for coding agents, plus a one-command client installer.",
+  "version": "0.2.2",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "jev-mcp-server",
+      "version": "0.2.2",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
