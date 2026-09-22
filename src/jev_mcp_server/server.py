@@ -63,6 +63,40 @@ def _validated_choice(answer: dict, ids: set) -> dict:
     return answer
 
 
+def _validated_score(answer: dict, count: int) -> tuple[float, dict[int, float]]:
+    """Validate a score response and return ``(value, probabilities)``.
+
+    Validation lives here rather than inline in ``score`` so ``value`` and the
+    probabilities are only ever read inside the guarded block — reading them
+    after a ``valid`` flag that an ``except`` can clear is correct at runtime but
+    impossible to verify statically, and that static check is what catches the
+    next edit to this function.
+
+    The returned keys are ``int``, not the wire's digit strings: the check below
+    already proves they are exactly ``0..count-1``, so this is the one place
+    that knows it, rather than leaving callers an unstated assumption.
+    """
+    try:
+        raw = answer["probabilities"]
+        value = answer["score"]
+        valid = (
+            type(value) in (int, float)
+            and math.isfinite(value)
+            and 0 <= value <= count - 1
+            and set(raw) == {str(i) for i in range(count)}
+            and all(type(v) in (int, float) and 0 <= v <= 1 for v in raw.values())
+            and abs(sum(raw.values()) - 1) < 0.02
+        )
+        if valid:
+            # Keys are exactly "0".."count-1" (checked above), so int() cannot
+            # raise and every index lands in range. Returning from inside the
+            # guarded block is what keeps this statically checkable.
+            return value, {int(key): prob for key, prob in raw.items()}
+    except (KeyError, TypeError, ValueError):
+        pass
+    raise ValueError("Invalid TypeSafe response; no score returned.")
+
+
 def _validated_options(options: dict[str, str]) -> None:
     if len(options) != len(set(options)) or not 2 <= len(options) <= MAX_OPTIONS:
         raise ValueError(f"Provide between 2 and {MAX_OPTIONS} uniquely-keyed options.")
@@ -92,7 +126,13 @@ def choice(question: str, options: dict[str, str], context: str = "") -> str:
     _validated_options(options)
     started = time.perf_counter()
     result, from_cache = _answer(
-        {"decision": {"type": "choice", "criteria": options, "instructions": {"question": question, "context": context}}}
+        {
+            "decision": {
+                "type": "choice",
+                "criteria": options,
+                "instructions": {"question": question, "context": context},
+            }
+        }
     )
     answer = _validated_choice(result.get("answers", {}).get("decision", {}), set(options))
     probs = dict(sorted(answer["probabilities"].items(), key=lambda kv: -kv[1]))
@@ -136,23 +176,9 @@ def score(question: str, levels: list[str], context: str = "") -> str:
         {"score": {"type": "score", "criteria": levels, "instructions": {"question": question, "context": context}}}
     )
     answer = result.get("answers", {}).get("score", {})
-    try:
-        probs = answer["probabilities"]
-        value = answer["score"]
-        valid = (
-            type(value) in (int, float)
-            and math.isfinite(value)
-            and 0 <= value <= len(levels) - 1
-            and set(probs) == {str(i) for i in range(len(levels))}
-            and all(type(v) in (int, float) and 0 <= v <= 1 for v in probs.values())
-            and abs(sum(probs.values()) - 1) < 0.02
-        )
-    except (KeyError, TypeError, ValueError):
-        valid = False
-    if not valid:
-        raise ValueError("Invalid TypeSafe response; no score returned.")
-    readable = {levels[int(k)]: v for k, v in probs.items()}
-    nearest = min(range(len(levels)), key=lambda i: abs(i - value))
+    value, probs = _validated_score(answer, len(levels))
+    readable = {levels[i]: v for i, v in probs.items()}
+    nearest = min(probs, key=lambda i: abs(i - value))
     return json.dumps(
         {
             "score": value,
@@ -187,7 +213,10 @@ def noul(question: str, context: str = "") -> str:
     value = answer.get("noul")
     if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
         raise ValueError("Invalid TypeSafe response; no verdict returned.")
-    return json.dumps({"noul": value, "verdict": "yes" if value >= 0.5 else "no", **_meta(result, started, from_cache)}, ensure_ascii=False)
+    return json.dumps(
+        {"noul": value, "verdict": "yes" if value >= 0.5 else "no", **_meta(result, started, from_cache)},
+        ensure_ascii=False,
+    )
 
 
 @mcp.tool()
@@ -218,20 +247,30 @@ def compare(question: str, a: str, b: str, context: str = "") -> str:
     options = {"a": a, "b": b}
     started = time.perf_counter()
     result, from_cache = _answer(
-        {"decision": {"type": "choice", "criteria": options, "instructions": {"question": question, "context": context}}}
+        {
+            "decision": {
+                "type": "choice",
+                "criteria": options,
+                "instructions": {"question": question, "context": context},
+            }
+        }
     )
     answer = _validated_choice(result.get("answers", {}).get("decision", {}), {"a", "b"})
-    probs = dict(sorted(answer["probabilities"].items(), key=lambda kv: -kv[1]))
+    # Annotated so the value type survives the loose ``dict`` that
+    # ``_validated_choice`` returns; without it ``min`` below cannot be checked.
+    ranked: dict[str, float] = answer["probabilities"]
+    probs: dict[str, float] = dict(sorted(ranked.items(), key=lambda kv: -kv[1]))
     return json.dumps(
         {
             "preferred": answer["choice"],
             "confidence": answer["confidence"],
             "probabilities": probs,
-            "runner_up": min(probs, key=probs.get),
+            "runner_up": min(probs, key=lambda key: probs[key]),
             **_meta(result, started, from_cache),
         },
         ensure_ascii=False,
     )
+
 
 @mcp.tool()
 def verify(claim: str, evidence: str) -> str:
@@ -258,7 +297,10 @@ def verify(claim: str, evidence: str) -> str:
         {
             "noul": {
                 "type": "noul",
-                "instructions": {"question": f"Is this claim supported by the evidence?\nClaim: {claim}", "context": evidence},
+                "instructions": {
+                    "question": f"Is this claim supported by the evidence?\nClaim: {claim}",
+                    "context": evidence,
+                },
             }
         }
     )
@@ -266,7 +308,15 @@ def verify(claim: str, evidence: str) -> str:
     value = answer.get("noul")
     if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
         raise ValueError("Invalid TypeSafe response; no verdict returned.")
-    return json.dumps({"noul": value, "verdict": "supported" if value >= 0.5 else "not supported", **_meta(result, started, from_cache)}, ensure_ascii=False)
+    return json.dumps(
+        {
+            "noul": value,
+            "verdict": "supported" if value >= 0.5 else "not supported",
+            **_meta(result, started, from_cache),
+        },
+        ensure_ascii=False,
+    )
+
 
 @mcp.tool()
 def classify(
@@ -338,7 +388,12 @@ def classify(
             "summary": dict(sorted(summary.items(), key=lambda kv: -kv[1])),
             "model": model,
             "total_latency_ms": round((time.perf_counter() - started) * 1000),
-            "usage": {"input_tokens": usage_in, "output_tokens": usage_out, "calls": calls, "cached_calls": cached_calls},
+            "usage": {
+                "input_tokens": usage_in,
+                "output_tokens": usage_out,
+                "calls": calls,
+                "cached_calls": cached_calls,
+            },
         },
         ensure_ascii=False,
     )

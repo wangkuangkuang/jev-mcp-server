@@ -7,9 +7,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Keep every platform's result visible: a Windows-only failure is exactly
+      # what this matrix exists to catch, and fail-fast would hide the rest.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +23,30 @@ jobs:
       - run: uv sync --dev
       - run: uv run ruff check .
       - run: uv run pytest -q
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv build
+      # A new module that never reaches the wheel is invisible until a user hits
+      # it, so check the contents rather than trusting the build config.
+      - name: Wheel ships the full package
+        run: >-
+          uv run python -c "import glob, sys, zipfile;
+          names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist();
+          want = ['jev_mcp_server/_fsutil.py', 'jev_mcp_server/installer.py'];
+          missing = [n for n in want if n not in names];
+          sys.exit('missing from wheel: ' + ', '.join(missing) if missing else 0)"
+      # server.json carries its own copy of the version, so it is easy to forget.
+      - name: Versions agree
+        run: >-
+          uv run python -c "import json, tomllib;
+          from pathlib import Path;
+          v = tomllib.loads(Path('pyproject.toml').read_text())['project']['version'];
+          d = json.loads(Path('server.json').read_text());
+          assert v == d['version'] == d['packages'][0]['version'], (v, d['version']);
+          print('versions agree:', v)"

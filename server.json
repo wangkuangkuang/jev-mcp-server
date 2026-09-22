@@ -3,12 +3,12 @@
   "name": "io.github.wangkuangkuang/jev-mcp-server",
   "title": "Jev MCP Server",
   "description": "MCP server for Jev (TypeSafe System One): typed decisions with calibrated probabilities.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "jev-mcp-server",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "transport": {
         "type": "stdio"
       }

@@ -12,6 +12,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ._fsutil import atomic_write_text, read_text, restrict
+
 CONFIG_DIR_ENV = "JEVMCP_CONFIG_DIR"
 CACHE_DIR_ENV = "JEVMCP_CACHE_DIR"
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "jev-mcp"
@@ -32,7 +34,7 @@ def resolve_key() -> str | None:
     if env_key:
         return env_key
     try:
-        value = key_file().read_text(encoding="utf-8").strip()
+        value = read_text(key_file()).strip()
     except OSError:
         return None
     return value or None
@@ -41,10 +43,10 @@ def resolve_key() -> str | None:
 def save_key(api_key: str) -> Path:
     directory = config_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    os.chmod(directory, 0o700)
+    restrict(directory, 0o700)
     target = key_file()
-    target.write_text(api_key.strip() + "\n", encoding="utf-8")
-    os.chmod(target, 0o600)
+    atomic_write_text(target, api_key.strip() + "\n")
+    restrict(target, 0o600)
     return target
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "jev-mcp-server"
-version = "0.2.2"
+version = "0.2.3"
 description = "MCP server for Jev (TypeSafe System One): the three official question types (choice, score, noul) plus compare, verify, batch classify, and a one-command client installer. Typed decisions with calibrated probabilities for coding agents."
 readme = "README.md"
 license = { text = "MIT" }
